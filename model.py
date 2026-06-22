@@ -52,14 +52,9 @@ def random_forest_predict(model, X):
 def main():
     # Basic fixed settings.
     k = 0 #Ordinal index of simulation to load (0-999).
-    train_test_ratio = 0.8 #Proportion of data to use for training (rest is for testing).
-
+    
     if k < 0 or k > 999:
         print("Error: k must be between 0 and 999.")
-        sys.exit(1)
-
-    if not 0 < train_test_ratio < 1:
-        print("Error: train_test_ratio must be between 0 and 1.")
         sys.exit(1)
 
     base = Path(__file__).resolve().parent / "Simulated_outcomes"
@@ -70,50 +65,36 @@ def main():
         print(train_path)
         sys.exit(1)
 
-    x, t, mu0, mu1, yf, ycf = load_one_simulation(np, train_path, k)
+    test_path = base / "ihdp_npci_1-1000.test.npz"
+
+    if not test_path.exists():
+        print("Could not find test file:")
+        print(test_path)
+        sys.exit(1)
+
+    x_train, t_train, mu0_train, mu1_train, yf_train, ycf_train = load_one_simulation(np, train_path, k)
+    x_test, t_test, mu0_test, mu1_test, yf_test, ycf_test = load_one_simulation(np, test_path, k)
 
     # Reconstruct noisy potential outcomes from (yf, ycf, t):
     # If t=1, then yf=Y1_noisy and ycf=Y0_noisy.
     # If t=0, then yf=Y0_noisy and ycf=Y1_noisy.
-    y1_noisy = np.where(t == 1, yf, ycf)
-    y0_noisy = np.where(t == 1, ycf, yf)
+    y1_noisy_train = np.where(t_train == 1, yf_train, ycf_train)
+    y0_noisy_train = np.where(t_train == 1, ycf_train, yf_train)
+
+    y1_noisy_test = np.where(t_test == 1, yf_test, ycf_test)
+    y0_noisy_test = np.where(t_test == 1, ycf_test, yf_test)
 
     # Ground-truth CATE without noise (used only for evaluation).
-    cate_real = mu1 - mu0
+    cate_real_test = mu1_test - mu0_test
 
     # Use only x as model input.
-    X = x
+    X_train = x_train
+    X_test = x_test
 
-    # We want to split into train and test sets, but lets shuffle the data first to ensure randomness.
-    n = X.shape[0]
-    rng = np.random.default_rng(42) #Fixed seed for reproducibility.
-    order = rng.permutation(n)
-
-    cut = int(n * train_test_ratio)
-    train_idx = order[:cut] #This is list of indexes for training samples.
-    test_idx = order[cut:] #This is list of indexes for testing samples.
-
-    X_train = X[train_idx]
-    X_test = X[test_idx]
-
-    t_train = t[train_idx]
-    t_test = t[test_idx]
-
-    y1_noisy_train = y1_noisy[train_idx]
-    y0_noisy_train = y0_noisy[train_idx]
-
-    y1_noisy_test = y1_noisy[test_idx]
-    y0_noisy_test = y0_noisy[test_idx]
-
-    yf_test = yf[test_idx]
-    mu0_test = mu0[test_idx]
-    mu1_test = mu1[test_idx]
-    cate_real_test = cate_real[test_idx]
-
-    print("\n--- Data split ---")
+    print("\n--- Dataset summary ---")
     print("Train samples:", X_train.shape[0])
     print("Test samples:", X_test.shape[0])
-    print("Number of features:", X.shape[1])
+    print("Number of features:", X_train.shape[1])
     print("Treated in train:", int((t_train == 1).sum()))
     print("Control in train:", int((t_train == 0).sum()))
     print("Treated in test:", int((t_test == 1).sum()))
@@ -145,7 +126,6 @@ def main():
 
     factual_pred = np.where(t_test == 1, y1_hat, y0_hat)
     mse_factual = np.mean((factual_pred - yf_test) ** 2)
-    mae_factual = np.mean(np.abs(factual_pred - yf_test))
 
     print("\n--- Results ---")
     print("MSE y1_hat vs true Y1_noisy:", float(mse_y1_noisy))
@@ -153,7 +133,6 @@ def main():
     print("MSE CATE_EST vs CATE_REAL (mu1-mu0):", float(mse_cate_vs_real))
     print("MSE CATE_EST vs noisy CATE:", float(mse_cate_vs_noisy))
     print("MSE factual prediction vs yf:", float(mse_factual))
-    print("MAE factual prediction vs yf:", float(mae_factual))
 
     print("First 5 true Y0_noisy:", y0_noisy_test[:5])
     print("First 5 true mu0:", mu0_test[:5])
